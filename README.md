@@ -1,6 +1,6 @@
-# PDF Form CLI (Aspose) - Fill JLL AcroForm Fields
+# PDF Form CLI (Aspose) - Fill AcroForm Fields
 
-A production-ready Java CLI that uses **Aspose.PDF for Java** to populate selected AcroForm fields in the JLL Site Inspection Questionnaire.
+A production-ready Java CLI that uses **Aspose.PDF for Java** to populate selected AcroForm fields in the *Site Inspection Questionnaire*.
 
 This project fills three text fields by exact AcroForm name:
 
@@ -42,7 +42,7 @@ target/pdf-form-cli.jar
 
 ```bash
 java -jar target/pdf-form-cli.jar \
-  --input "JLL Site Inspection Questionnaire 2026.pdf" \
+  --input "Site Inspection Questionnaire 2026.pdf" \
   --output "filled.pdf" \
   --property-name "Sunset Villas" \
   --property-address "123 Main Street" \
@@ -122,7 +122,7 @@ If neither is set, the program runs without explicitly loading a license.
 
 ```bash
 java -jar target/pdf-form-cli.jar \
-  --input "JLL Site Inspection Questionnaire 2026.pdf" \
+  --input "Site Inspection Questionnaire 2026.pdf" \
   --list-fields
 ```
 
