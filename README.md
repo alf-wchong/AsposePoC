@@ -24,7 +24,7 @@ For the full design rationale, see [docs/aspose-acroform-cli-design.md](./docs/a
 - Maven 3.8+
 - Access to the Aspose repository for dependency resolution
 
-Aspose publishes the `com.aspose:aspose-pdf:26.3` Maven dependency and hosts it in the Aspose repository. citeturn619005search0
+Aspose publishes the `com.aspose:aspose-pdf:26.3` Maven dependency and hosts it in the Aspose repository.
 
 ## Build
 
@@ -48,6 +48,51 @@ java -jar target/pdf-form-cli.jar \
   --property-address "123 Main Street" \
   --company-name "Acme Management LLC"
 ```
+
+## Form Fill Flow
+
+The CLI fills the PDF by opening the document, resolving the AcroForm, locating the required text fields by exact name, setting each value, and then saving a new output PDF.
+
+```mermaid
+flowchart TD
+    A["CLI input parsed<br/>--input, --output, field values"] --> B["LicenseLoader.load(...)<br/>optional license setup"]
+    B --> C["new Document(inputPdf)"]
+    C --> D["document.getForm()"]
+    D --> E["form.getFields()"]
+    E --> F["buildFieldMap(fields)<br/>Map&lt;String, Field&gt;"]
+
+    F --> G["setTextField(..., 'Property name', value)"]
+    G --> G1["fieldsByName.get('Property name')"]
+    G1 --> G2["cast to TextBoxField"]
+    G2 --> G3["TextBoxField.setValue(propertyName)"]
+
+    G3 --> H["setTextField(..., 'Property address', value)"]
+    H --> H1["fieldsByName.get('Property address')"]
+    H1 --> H2["cast to TextBoxField"]
+    H2 --> H3["TextBoxField.setValue(propertyAddress)"]
+
+    H3 --> I["setTextField(..., 'Company name', value)"]
+    I --> I1["fieldsByName.get('Company name')"]
+    I1 --> I2["cast to TextBoxField"]
+    I2 --> I3["TextBoxField.setValue(companyName)"]
+
+    I3 --> J["document.save(outputPdf)"]
+    J --> K["filled PDF written to disk"]
+```
+
+### Aspose API Sequence
+
+The core Aspose calls used during form filling are:
+
+1. `new Document(inputPdf)`
+2. `document.getForm()`
+3. `form.getFields()`
+4. `fieldsByName.get(fieldName)`
+5. `(TextBoxField) field`
+6. `TextBoxField.setValue(...)`
+7. `document.save(outputPdf)`
+
+This sequence is repeated for each supported field value before the final save.
 
 ## Command Options
 
@@ -145,13 +190,3 @@ Build a release jar:
 ```bash
 mvn clean package
 ```
-
-## Next Steps
-
-Good follow-on enhancements include:
-
-- JSON input support
-- batch processing of many PDFs
-- checkbox and dropdown support
-- field flattening
-- template version compatibility checks
