@@ -1,4 +1,4 @@
-# Design: Java CLI to Fill Selected AcroForm Fields in the JLL Site Inspection Questionnaire
+# Design: Java CLI to Fill Selected AcroForm Fields in the Site Inspection Questionnaire
 
 ## Overview
 
@@ -45,7 +45,7 @@ The preferred implementation uses the **core DOM-style API** because it is direc
 
 ```bash
 java -jar pdf-form-cli.jar \
-  --input "JLL Site Inspection Questionnaire 2026.pdf" \
+  --input "Site Inspection Questionnaire 2026.pdf" \
   --output "filled.pdf" \
   --property-name "Sunset Villas" \
   --property-address "123 Main Street" \
@@ -134,7 +134,7 @@ Recommended integration flow:
 The simplest robust design is a Maven-structured Java CLI built on **Aspose.PDF's DOM API**. The CLI:
 
 - accepts three required values on the command line
-- opens the JLL questionnaire PDF
+- opens the questionnaire PDF
 - locates the exact AcroForm fields `Property name`, `Property address`, and `Company name`
 - sets each value through `TextBoxField.setValue(String)`
 - saves a new output PDF
