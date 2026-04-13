@@ -1,0 +1,23 @@
+[
+  {
+    "key": "Borrower",
+    "value": "Acme Inc",
+    "aliases": [
+      "Borrower Principal Name"
+    ],
+    "ReplaceAll": true,
+    "CaseSensitivity": false
+  },
+  {
+    "key": "Authorized Signature",
+    "value": "Jane Doe",
+    "aliases": [
+      "Signature"
+    ]
+  },
+  {
+    "key": "Date",
+    "value": "2026-04-13",
+    "aliases": []
+  }
+]
