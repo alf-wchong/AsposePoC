@@ -5,6 +5,7 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.aspose.cells.Cell;
 import com.aspose.cells.Cells;
+import com.aspose.cells.License;
 import com.aspose.cells.Workbook;
 import com.aspose.cells.Worksheet;
 import com.example.asposecells.model.FieldMapping;
@@ -20,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -34,24 +36,32 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class ExcelMarkerFillerApplication {
+
     private static final Pattern MARKER_PATTERN = Pattern.compile("^\\[\\{!(.+?)!}]$");
     private static final String DEFAULT_LOG_FILE = "target/excel-marker-filler.log";
+    private static final String ASPOSE_LICENSE_RESOURCE = "Aspose.lic";
+
     private static Logger log = LoggerFactory.getLogger(ExcelMarkerFillerApplication.class);
 
     public static void main(String[] args) {
         int exitCode = 1;
         Instant startedAt = Instant.now();
+
         try {
             CommandLine commandLine = parseArgs(args);
             configureLogging(commandLine.getOptionValue("log-file", DEFAULT_LOG_FILE));
+
+            applyAsposeLicense();
 
             Path inputPath = Path.of(commandLine.getOptionValue("input")).toAbsolutePath().normalize();
             Path configPath = Path.of(commandLine.getOptionValue("config")).toAbsolutePath().normalize();
             Path outputPath = Path.of(commandLine.getOptionValue("output")).toAbsolutePath().normalize();
             boolean scanAllSheets = commandLine.hasOption("scan-all-sheets");
 
-            log.info("event=run_start input=\"{}\" config=\"{}\" output=\"{}\" scanAllSheets={}",
-                inputPath, configPath, outputPath, scanAllSheets);
+            log.info(
+                "event=run_start input=\"{}\" config=\"{}\" output=\"{}\" scanAllSheets={}",
+                inputPath, configPath, outputPath, scanAllSheets
+            );
 
             validateReadableFile(inputPath, "Excel input workbook");
             validateReadableFile(configPath, "JSON config file");
@@ -62,10 +72,12 @@ public class ExcelMarkerFillerApplication {
 
             Workbook workbook = new Workbook(inputPath.toString());
             List<Worksheet> worksheets = resolveWorksheets(workbook, scanAllSheets);
-            DiscoveryResult discoveryResult = findMarkerCells(worksheets);
 
+            DiscoveryResult discoveryResult = findMarkerCells(worksheets);
             if (discoveryResult.markerCells.isEmpty()) {
-                throw new IllegalStateException("No marker cells matching the pattern [{!...!}] were found in the targeted workbook scope.");
+                throw new IllegalStateException(
+                    "No marker cells matching the pattern [{!...!}] were found in the targeted workbook scope."
+                );
             }
 
             checkForAmbiguousMatches(discoveryResult.markerCells, mappings);
@@ -73,17 +85,25 @@ public class ExcelMarkerFillerApplication {
 
             workbook.save(outputPath.toString());
             log.info("event=workbook_saved output=\"{}\"", outputPath);
-            log.info("event=run_complete status=success elapsedMs={} sheetsScanned={} markersDiscovered={} mappingsLoaded={} mappingsMatched={} mappingsUnmatched={} cellsReplaced={}",
+
+            log.info(
+                "event=run_complete status=success elapsedMs={} sheetsScanned={} markersDiscovered={} mappingsLoaded={} mappingsMatched={} mappingsUnmatched={} cellsReplaced={}",
                 Duration.between(startedAt, Instant.now()).toMillis(),
                 discoveryResult.sheetsScanned,
                 discoveryResult.markersDiscovered,
                 mappings.size(),
                 fillResult.mappingsMatched,
                 fillResult.mappingsUnmatched,
-                fillResult.cellsReplaced);
+                fillResult.cellsReplaced
+            );
+
             exitCode = 0;
         } catch (Exception exception) {
-            log.error("event=run_failed status=failed errorType=unhandled_exception message=\"{}\"", exception.getMessage(), exception);
+            log.error(
+                "event=run_failed status=failed errorType=unhandled_exception message=\"{}\"",
+                exception.getMessage(),
+                exception
+            );
             System.err.println("ERROR: " + exception.getMessage());
             printUsage();
         }
@@ -93,36 +113,107 @@ public class ExcelMarkerFillerApplication {
         }
     }
 
+    private static void applyAsposeLicense() {
+        try (InputStream inputStream = ExcelMarkerFillerApplication.class
+            .getClassLoader()
+            .getResourceAsStream(ASPOSE_LICENSE_RESOURCE)) {
+
+            if (inputStream == null) {
+                throw new IllegalStateException(
+                    "Aspose license file not found in classpath: " + ASPOSE_LICENSE_RESOURCE +
+                    ". Place it under src/main/resources/."
+                );
+            }
+
+            License license = new License();
+            license.setLicense(inputStream);
+
+            log.info("event=aspose_license_loaded resource=\"{}\"", ASPOSE_LICENSE_RESOURCE);
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                "Failed to load Aspose.Cells license from classpath resource: " + ASPOSE_LICENSE_RESOURCE,
+                exception
+            );
+        }
+    }
+
     private static CommandLine parseArgs(String[] args) throws ParseException {
         Options options = buildOptions();
         try {
             return new DefaultParser().parse(options, args);
         } catch (ParseException ex) {
-            throw new IllegalArgumentException("Invalid command-line arguments. Use --input --config --output [--log-file] [--scan-all-sheets]", ex);
+            throw new IllegalArgumentException(
+                "Invalid command-line arguments. Use --input --config --output [--log-file] [--scan-all-sheets]",
+                ex
+            );
         }
     }
 
     private static void configureLogging(String logFilePath) throws JoranException, IOException {
         System.setProperty("APP_LOG_FILE", Path.of(logFilePath).toAbsolutePath().normalize().toString());
+
         Path logParent = Path.of(logFilePath).toAbsolutePath().normalize().getParent();
         if (logParent != null) {
             Files.createDirectories(logParent);
         }
+
         LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
         context.reset();
+
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(context);
-        configurator.doConfigure(ExcelMarkerFillerApplication.class.getClassLoader().getResource("logback.xml"));
+        configurator.doConfigure(
+            ExcelMarkerFillerApplication.class.getClassLoader().getResource("logback.xml")
+        );
+
         log = LoggerFactory.getLogger(ExcelMarkerFillerApplication.class);
     }
 
     private static Options buildOptions() {
         Options options = new Options();
-        options.addOption(Option.builder().longOpt("input").hasArg().required().desc("Path to input Excel workbook").build());
-        options.addOption(Option.builder().longOpt("config").hasArg().required().desc("Path to input JSON mapping file").build());
-        options.addOption(Option.builder().longOpt("output").hasArg().required().desc("Path to output Excel workbook").build());
-        options.addOption(Option.builder().longOpt("log-file").hasArg().desc("Path to rolling application log file").build());
-        options.addOption(Option.builder().longOpt("scan-all-sheets").desc("Scan all worksheets instead of only the first worksheet").build());
+
+        options.addOption(
+            Option.builder()
+                .longOpt("input")
+                .hasArg()
+                .required()
+                .desc("Path to input Excel workbook")
+                .build()
+        );
+
+        options.addOption(
+            Option.builder()
+                .longOpt("config")
+                .hasArg()
+                .required()
+                .desc("Path to input JSON mapping file")
+                .build()
+        );
+
+        options.addOption(
+            Option.builder()
+                .longOpt("output")
+                .hasArg()
+                .required()
+                .desc("Path to output Excel workbook")
+                .build()
+        );
+
+        options.addOption(
+            Option.builder()
+                .longOpt("log-file")
+                .hasArg()
+                .desc("Path to rolling application log file")
+                .build()
+        );
+
+        options.addOption(
+            Option.builder()
+                .longOpt("scan-all-sheets")
+                .desc("Scan all worksheets instead of only the first worksheet")
+                .build()
+        );
+
         return options;
     }
 
@@ -146,17 +237,25 @@ public class ExcelMarkerFillerApplication {
 
     private static List<FieldMapping> loadMappings(Path configPath) throws IOException {
         ObjectMapper objectMapper = new ObjectMapper();
-        List<FieldMapping> mappings = objectMapper.readValue(configPath.toFile(), new TypeReference<>() {});
+        List<FieldMapping> mappings = objectMapper.readValue(
+            configPath.toFile(),
+            new TypeReference<>() {}
+        );
+
         log.info("event=mappings_loaded mappingsLoaded={} config=\"{}\"", mappings.size(), configPath);
+
         for (int i = 0; i < mappings.size(); i++) {
             FieldMapping mapping = mappings.get(i);
-            log.debug("event=mapping_loaded mappingIndex={} key=\"{}\" aliases={} replaceAll={} caseSensitive={}",
+            log.debug(
+                "event=mapping_loaded mappingIndex={} key=\"{}\" aliases={} replaceAll={} caseSensitive={}",
                 i,
                 mapping.getKey(),
                 mapping.getAliases(),
                 mapping.isReplaceAll(),
-                mapping.isCaseSensitive());
+                mapping.isCaseSensitive()
+            );
         }
+
         return mappings;
     }
 
@@ -166,22 +265,40 @@ public class ExcelMarkerFillerApplication {
         }
 
         Set<String> normalizedNames = new LinkedHashSet<>();
+
         for (int index = 0; index < mappings.size(); index++) {
             FieldMapping mapping = mappings.get(index);
+
             if (mapping.getKey() == null || mapping.getKey().isBlank()) {
-                throw new IllegalArgumentException("Mapping at index " + index + " is missing a non-blank key.");
+                throw new IllegalArgumentException(
+                    "Mapping at index " + index + " is missing a non-blank key."
+                );
             }
+
             if (mapping.getValue() == null) {
-                throw new IllegalArgumentException("Mapping at index " + index + " is missing value.");
+                throw new IllegalArgumentException(
+                    "Mapping at index " + index + " is missing value."
+                );
             }
+
             List<String> names = mapping.effectiveNames();
             if (names.isEmpty()) {
-                throw new IllegalArgumentException("Mapping at index " + index + " must contain a key and/or aliases.");
+                throw new IllegalArgumentException(
+                    "Mapping at index " + index + " must contain a key and/or aliases."
+                );
             }
+
             for (String name : names) {
-                String normalized = mapping.isCaseSensitive() ? "CS::" + name : "CI::" + name.toLowerCase(Locale.ROOT);
+                String normalized = mapping.isCaseSensitive()
+                    ? "CS::" + name
+                    : "CI::" + name.toLowerCase(Locale.ROOT);
+
                 if (!normalizedNames.add(normalized)) {
-                    log.debug("event=duplicate_searchable_name mappingIndex={} searchableName=\"{}\"", index, normalized);
+                    log.debug(
+                        "event=duplicate_searchable_name mappingIndex={} searchableName=\"{}\"",
+                        index,
+                        normalized
+                    );
                 }
             }
         }
@@ -189,6 +306,7 @@ public class ExcelMarkerFillerApplication {
 
     private static List<Worksheet> resolveWorksheets(Workbook workbook, boolean scanAllSheets) {
         List<Worksheet> worksheets = new ArrayList<>();
+
         if (scanAllSheets) {
             for (int i = 0; i < workbook.getWorksheets().getCount(); i++) {
                 worksheets.add(workbook.getWorksheets().get(i));
@@ -196,31 +314,54 @@ public class ExcelMarkerFillerApplication {
         } else {
             worksheets.add(workbook.getWorksheets().get(0));
         }
+
         return worksheets;
     }
 
     private static DiscoveryResult findMarkerCells(List<Worksheet> worksheets) {
         List<MarkerCell> markerCells = new ArrayList<>();
+
         for (Worksheet worksheet : worksheets) {
             Cells cells = worksheet.getCells();
             int maxDataRow = cells.getMaxDataRow();
             int maxDataColumn = cells.getMaxDataColumn();
-            log.debug("event=worksheet_scan_start sheet=\"{}\" maxDataRow={} maxDataColumn={}",
-                worksheet.getName(), maxDataRow, maxDataColumn);
+
+            log.debug(
+                "event=worksheet_scan_start sheet=\"{}\" maxDataRow={} maxDataColumn={}",
+                worksheet.getName(),
+                maxDataRow,
+                maxDataColumn
+            );
+
             for (int row = 0; row <= maxDataRow; row++) {
                 for (int col = 0; col <= maxDataColumn; col++) {
                     Cell cell = cells.get(row, col);
                     Object value = cell.getValue();
+
                     if (!(value instanceof String text)) {
                         continue;
                     }
+
                     Matcher matcher = MARKER_PATTERN.matcher(text.trim());
                     if (matcher.matches()) {
                         String markerName = matcher.group(1).trim();
-                        MarkerCell markerCell = new MarkerCell(worksheet.getName(), cell.getName(), markerName, text, cell);
+                        MarkerCell markerCell = new MarkerCell(
+                            worksheet.getName(),
+                            cell.getName(),
+                            markerName,
+                            text,
+                            cell
+                        );
+
                         markerCells.add(markerCell);
-                        log.debug("event=marker_discovered sheet=\"{}\" cell=\"{}\" markerRaw=\"{}\" markerName=\"{}\"",
-                            markerCell.sheetName, markerCell.cellName, markerCell.rawCellValue, markerCell.markerName);
+
+                        log.debug(
+                            "event=marker_discovered sheet=\"{}\" cell=\"{}\" markerRaw=\"{}\" markerName=\"{}\"",
+                            markerCell.sheetName,
+                            markerCell.cellName,
+                            markerCell.rawCellValue,
+                            markerCell.markerName
+                        );
                     }
                 }
             }
@@ -231,38 +372,55 @@ public class ExcelMarkerFillerApplication {
         discoveryResult.sheetsConsidered = worksheets.size();
         discoveryResult.sheetsScanned = worksheets.size();
         discoveryResult.markersDiscovered = markerCells.size();
-        log.info("event=marker_discovery_complete sheetsConsidered={} sheetsScanned={} markersDiscovered={}",
-            discoveryResult.sheetsConsidered, discoveryResult.sheetsScanned, discoveryResult.markersDiscovered);
+
+        log.info(
+            "event=marker_discovery_complete sheetsConsidered={} sheetsScanned={} markersDiscovered={}",
+            discoveryResult.sheetsConsidered,
+            discoveryResult.sheetsScanned,
+            discoveryResult.markersDiscovered
+        );
+
         return discoveryResult;
     }
 
     private static void checkForAmbiguousMatches(List<MarkerCell> markerCells, List<FieldMapping> mappings) {
         for (MarkerCell markerCell : markerCells) {
             List<MatchedMapping> matchedMappings = new ArrayList<>();
+
             for (int i = 0; i < mappings.size(); i++) {
                 FieldMapping mapping = mappings.get(i);
                 if (matches(markerCell.markerName, mapping)) {
                     matchedMappings.add(new MatchedMapping(i, mapping));
                 }
             }
+
             if (matchedMappings.size() > 1) {
                 String matchingMappings = matchedMappings.stream()
-                    .map(match -> String.format("{mappingIndex=%d,key=\"%s\",aliases=%s}",
+                    .map(match -> String.format(
+                        "{mappingIndex=%d,key=\"%s\",aliases=%s}",
                         match.mappingIndex,
                         safe(match.mapping.getKey()),
-                        match.mapping.getAliases()))
+                        match.mapping.getAliases()
+                    ))
                     .collect(Collectors.joining(", "));
+
                 String message = String.format(
                     "event=validation_failed errorType=ambiguous_marker_match status=failed sheet=\"%s\" cell=\"%s\" markerRaw=\"%s\" markerName=\"%s\" matchingMappings=[%s] message=\"Marker matched more than one JSON entry\"",
                     markerCell.sheetName,
                     markerCell.cellName,
                     markerCell.rawCellValue,
                     markerCell.markerName,
-                    matchingMappings);
+                    matchingMappings
+                );
+
                 log.error(message);
-                throw new IllegalStateException("Marker matched more than one JSON entry. See error log for sheet, cell, marker, and competing mappings.");
+
+                throw new IllegalStateException(
+                    "Marker matched more than one JSON entry. See error log for sheet, cell, marker, and competing mappings."
+                );
             }
         }
+
         log.info("event=validation_complete ambiguousMarkers=0 ambiguousMappings=0 validationStatus=passed");
     }
 
@@ -276,8 +434,14 @@ public class ExcelMarkerFillerApplication {
             int replacedCellsForMapping = 0;
             List<String> matchedCells = new ArrayList<>();
 
-            log.debug("event=mapping_evaluation_start mappingIndex={} key=\"{}\" aliases={} replaceAll={} caseSensitive={}",
-                i, mapping.getKey(), mapping.getAliases(), mapping.isReplaceAll(), mapping.isCaseSensitive());
+            log.debug(
+                "event=mapping_evaluation_start mappingIndex={} key=\"{}\" aliases={} replaceAll={} caseSensitive={}",
+                i,
+                mapping.getKey(),
+                mapping.getAliases(),
+                mapping.isReplaceAll(),
+                mapping.isCaseSensitive()
+            );
 
             for (MarkerCell markerCell : markerCells) {
                 if (markerCell.replaced || !matches(markerCell.markerName, mapping)) {
@@ -286,13 +450,21 @@ public class ExcelMarkerFillerApplication {
 
                 matchedMarkersForMapping++;
                 matchedCells.add(markerCell.sheetName + "!" + markerCell.cellName);
+
                 markerCell.cell.putValue(mapping.getValue());
                 markerCell.replaced = true;
                 replacedCellsForMapping++;
                 result.cellsReplaced++;
 
-                log.debug("event=cell_replaced mappingIndex={} key=\"{}\" sheet=\"{}\" cell=\"{}\" markerName=\"{}\" value=\"{}\"",
-                    i, mapping.getKey(), markerCell.sheetName, markerCell.cellName, markerCell.markerName, mapping.getValue());
+                log.debug(
+                    "event=cell_replaced mappingIndex={} key=\"{}\" sheet=\"{}\" cell=\"{}\" markerName=\"{}\" value=\"{}\"",
+                    i,
+                    mapping.getKey(),
+                    markerCell.sheetName,
+                    markerCell.cellName,
+                    markerCell.markerName,
+                    mapping.getValue()
+                );
 
                 if (!mapping.isReplaceAll()) {
                     break;
@@ -304,23 +476,37 @@ public class ExcelMarkerFillerApplication {
             } else {
                 result.mappingsUnmatched++;
             }
+
             if (!mapping.isReplaceAll()) {
                 result.replaceAllFalseMappings++;
             }
+
             result.markersMatched += matchedMarkersForMapping;
 
-            log.debug("event=mapping_result mappingIndex={} key=\"{}\" matchedMarkers={} replacedCells={} matchedCells={}",
-                i, mapping.getKey(), matchedMarkersForMapping, replacedCellsForMapping, matchedCells);
+            log.debug(
+                "event=mapping_result mappingIndex={} key=\"{}\" matchedMarkers={} replacedCells={} matchedCells={}",
+                i,
+                mapping.getKey(),
+                matchedMarkersForMapping,
+                replacedCellsForMapping,
+                matchedCells
+            );
         }
 
-        result.untouchedMarkers = (int) markerCells.stream().filter(markerCell -> !markerCell.replaced).count();
-        log.info("event=replacement_complete mappingsEvaluated={} mappingsMatched={} mappingsUnmatched={} replaceAllFalseMappings={} markersMatched={} cellsReplaced={}",
+        result.untouchedMarkers = (int) markerCells.stream()
+            .filter(markerCell -> !markerCell.replaced)
+            .count();
+
+        log.info(
+            "event=replacement_complete mappingsEvaluated={} mappingsMatched={} mappingsUnmatched={} replaceAllFalseMappings={} markersMatched={} cellsReplaced={}",
             result.mappingsEvaluated,
             result.mappingsMatched,
             result.mappingsUnmatched,
             result.replaceAllFalseMappings,
             result.markersMatched,
-            result.cellsReplaced);
+            result.cellsReplaced
+        );
+
         return result;
     }
 
@@ -334,6 +520,7 @@ public class ExcelMarkerFillerApplication {
                 return true;
             }
         }
+
         return false;
     }
 
